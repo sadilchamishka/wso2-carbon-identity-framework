@@ -43,6 +43,7 @@ import org.wso2.carbon.identity.application.common.model.ProvisioningConnectorCo
 import org.wso2.carbon.identity.application.common.model.RoleMapping;
 import org.wso2.carbon.identity.application.common.model.ServiceProvider;
 import org.wso2.carbon.identity.application.mgt.ApplicationManagementService;
+import org.wso2.carbon.identity.base.AuthenticatorPropertyConstants;
 import org.wso2.carbon.identity.core.util.IdentityDatabaseUtil;
 import org.wso2.carbon.identity.core.util.IdentityTenantUtil;
 import org.wso2.carbon.identity.provisioning.internal.ProvisioningServiceDataHolder;
@@ -259,6 +260,7 @@ public class OutboundProvisioningTest {
         FederatedAuthenticatorConfig federatedAuthenticatorConfig = new FederatedAuthenticatorConfig();
         federatedAuthenticatorConfig.setDisplayName("DisplayName1");
         federatedAuthenticatorConfig.setName("Name");
+        federatedAuthenticatorConfig.setDefinedByType(AuthenticatorPropertyConstants.DefinedByType.SYSTEM);
         federatedAuthenticatorConfig.setEnabled(true);
         Property property1 = new Property();
         property1.setName("Property1");
