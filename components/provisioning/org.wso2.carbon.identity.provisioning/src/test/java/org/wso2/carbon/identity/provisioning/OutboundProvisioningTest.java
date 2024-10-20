@@ -42,10 +42,12 @@ import org.wso2.carbon.identity.application.common.model.Property;
 import org.wso2.carbon.identity.application.common.model.ProvisioningConnectorConfig;
 import org.wso2.carbon.identity.application.common.model.RoleMapping;
 import org.wso2.carbon.identity.application.common.model.ServiceProvider;
+import org.wso2.carbon.identity.application.mgt.ApplicationConstants;
 import org.wso2.carbon.identity.application.mgt.ApplicationManagementService;
 import org.wso2.carbon.identity.base.AuthenticatorPropertyConstants;
 import org.wso2.carbon.identity.core.util.IdentityDatabaseUtil;
 import org.wso2.carbon.identity.core.util.IdentityTenantUtil;
+import org.wso2.carbon.identity.core.util.IdentityUtil;
 import org.wso2.carbon.identity.provisioning.internal.ProvisioningServiceDataHolder;
 import org.wso2.carbon.identity.provisioning.listener.DefaultInboundUserProvisioningListener;
 import org.wso2.carbon.identity.provisioning.listener.ProvisioningRoleMgtListener;
@@ -67,6 +69,8 @@ import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -77,6 +81,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.wso2.carbon.identity.provisioning.IdentityProvisioningConstants.APPLICATION_BASED_OUTBOUND_PROVISIONING_ENABLED;
 
 @Listeners(MockitoTestNGListener.class)
 public class OutboundProvisioningTest {
@@ -106,6 +111,11 @@ public class OutboundProvisioningTest {
 
     private static final String DB_NAME = "test";
     private final IdPManagementDAO idPManagementDAO = new IdPManagementDAO();
+    private static final String PROVISIONED_USER_NAME = "PRIMARY/John";
+    private static final String PROVISIONED_USER_ID = "123456789";
+    private static final String ROLE_UUID = "gt6y1ji1-htda7611";
+
+
     Connection connection;
 
     DefaultInboundUserProvisioningListener defaultInboundUserProvisioningListener;
@@ -136,14 +146,15 @@ public class OutboundProvisioningTest {
         when(tenantManager.getTenantId(SUPER_TENANT_DOMAIN)).thenReturn(-1234);
         when(userRealm.getUserStoreManager()).thenReturn(userStoreManager);
 
-        when(userStoreManager.getUserNameFromUserID(anyString())).thenReturn("PRIMARY/JOHN");
+        when(userStoreManager.getUserNameFromUserID(PROVISIONED_USER_ID)).thenReturn(PROVISIONED_USER_NAME);
+        when(userStoreManager.getUserIDFromUserName(PROVISIONED_USER_NAME)).thenReturn(PROVISIONED_USER_ID);
 
         when(userStoreManager.getRealmConfiguration()).thenReturn(realmConfiguration);
         when(realmConfiguration.getUserStoreProperty("DomainName")).thenReturn("PRIMARY");
 
         when(userStoreManager.getRoleListOfUser(anyString())).thenReturn(new String[]{"group1"});
 
-        serviceProvider.setApplicationName("sample-app");
+        serviceProvider.setApplicationName(ApplicationConstants.CONSOLE_APPLICATION_NAME);
 
         initiateH2Database(DB_NAME, getFilePath("h2.sql"));
 
@@ -169,18 +180,19 @@ public class OutboundProvisioningTest {
     public void testRoleBaseOutBoundProvisioning() throws IdentityRoleManagementException {
 
         ProvisioningRoleMgtListener postUpdateUserListOfRole = new ProvisioningRoleMgtListener();
-        RoleBasicInfo roleBasicInfo = new RoleBasicInfo("", "developer");
+        RoleBasicInfo roleBasicInfo = new RoleBasicInfo(ROLE_UUID, "developer");
         roleBasicInfo.setAudience("organization");
         ProvisioningServiceDataHolder.getInstance().setRoleManagementService(roleManagementService);
-        when(roleManagementService.getRoleBasicInfoById(anyString(),
+        when(roleManagementService.getRoleBasicInfoById(eq(ROLE_UUID),
                 eq(MultitenantConstants.SUPER_TENANT_DOMAIN_NAME))).thenReturn(roleBasicInfo);
-        List<String> newUserIdList = new ArrayList<>();
-        newUserIdList.add("12345");
+        when(roleManagementService.getRoleIdListOfUser(PROVISIONED_USER_ID, SUPER_TENANT_DOMAIN))
+                .thenReturn(Collections.singletonList(ROLE_UUID));
 
         try (MockedStatic<CarbonContext> carbonContext = Mockito.mockStatic(CarbonContext.class);
              MockedStatic<IdentityTenantUtil> identityTenantUtil = Mockito.mockStatic(IdentityTenantUtil.class);
              MockedStatic<IdentityDatabaseUtil> identityDatabaseUtil = Mockito.mockStatic(IdentityDatabaseUtil.class);
-             MockedStatic<ApplicationManagementService> appMgtService = Mockito.mockStatic(ApplicationManagementService.class)) {
+             MockedStatic<ApplicationManagementService> appMgtService = Mockito.mockStatic(ApplicationManagementService.class);
+             MockedStatic<IdentityUtil> identityUtil = Mockito.mockStatic(IdentityUtil.class)) {
 
             mockCarbonContext(carbonContext);
             connection = getConnection(DB_NAME);
@@ -189,13 +201,20 @@ public class OutboundProvisioningTest {
 
             identityTenantUtil.when(() -> IdentityTenantUtil.getTenantId(SUPER_TENANT_DOMAIN)).thenReturn(SUPER_TENANT_ID);
             identityTenantUtil.when(() -> IdentityTenantUtil.getTenantDomain(SUPER_TENANT_ID)).thenReturn(SUPER_TENANT_DOMAIN);
-
+            identityUtil.when(() -> IdentityUtil.extractDomainFromName(anyString())).thenReturn("PRIMARY");
             appMgtService.when(ApplicationManagementService::getInstance).thenReturn(applicationManagementService);
             when(applicationManagementService.getServiceProvider(anyString(), anyString())).thenReturn(serviceProvider);
+            when(userStoreManager.getRealmConfiguration()).thenReturn(realmConfiguration);
+            when(realmConfiguration.getUserStoreProperty("DomainName")).thenReturn("PRIMARY");
 
             idPManagementDAO.addIdP(identityProvider, SUPER_TENANT_ID);
-            postUpdateUserListOfRole.postUpdateUserListOfRole("", newUserIdList, new ArrayList<>(),
+            postUpdateUserListOfRole.postUpdateUserListOfRole(ROLE_UUID,
+                    Collections.singletonList(PROVISIONED_USER_ID), new ArrayList<>(),
                     MultitenantConstants.SUPER_TENANT_DOMAIN_NAME);
+
+            DefaultInboundUserProvisioningListener defaultInboundUserProvisioningListener1 =
+                    new DefaultInboundUserProvisioningListener();
+            defaultInboundUserProvisioningListener1.doPreDeleteUser(PROVISIONED_USER_NAME, userStoreManager);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
